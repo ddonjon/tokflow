@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Tokflow Auth Bridge",
+  "version": "1.0",
+  "description": "Securely connects your TikTok account to Tokflow.",
+  "permissions": ["cookies", "downloads"],
+  "host_permissions": [
+    "*://*.tiktok.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}

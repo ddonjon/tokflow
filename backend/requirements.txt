@@ -1,0 +1,6 @@
+camoufox[geoip]
+pyvirtualdisplay==3.0
+fastapi
+uvicorn
+python-multipart
+requests
