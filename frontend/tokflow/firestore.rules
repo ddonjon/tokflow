@@ -1,0 +1,73 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper: Global deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Common Helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // User Validation
+    function isValidUser(data) {
+      return data.uid is string && data.uid.size() <= 128 &&
+             data.email is string && data.email.size() <= 200 &&
+             data.displayName is string && data.displayName.size() <= 100 &&
+             data.photoURL is string && data.photoURL.size() <= 500 &&
+             data.plan in ['free', 'pro', 'enterprise'] &&
+             data.keys().hasAll(['uid', 'email', 'displayName', 'photoURL', 'plan', 'createdAt']) &&
+             data.keys().size() == 6;
+    }
+
+    // User Rules
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(incoming()) && incoming().uid == request.auth.uid;
+      allow update: if isOwner(userId) && isValidUser(incoming()) && 
+                    incoming().uid == existing().uid && 
+                    incoming().email == existing().email &&
+                    incoming().createdAt == existing().createdAt &&
+                    incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'plan']);
+    }
+
+    // Activity Validation
+    function isValidActivity(data) {
+      return data.userId is string && data.userId.size() <= 128 &&
+             data.type is string && data.type.size() <= 50 &&
+             data.status is string && data.status.size() <= 50 &&
+             data.label is string && data.label.size() <= 200 &&
+             data.progress is number &&
+             data.timestamp is timestamp &&
+             data.keys().hasAll(['userId', 'type', 'status', 'label', 'progress', 'timestamp']) &&
+             data.keys().size() == 6;
+    }
+
+    // Activity Rules
+    match /activities/{activityId} {
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && incoming().userId == request.auth.uid && isValidActivity(incoming());
+      // No updates for activities - they are logs
+      allow delete: if false;
+    }
+  }
+}
