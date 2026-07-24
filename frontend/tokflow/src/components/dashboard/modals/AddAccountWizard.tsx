@@ -8,10 +8,19 @@ import {
 } from 'lucide-react';
 import { SiTiktok, SiThreads, SiYoutube } from 'react-icons/si';
 
+// Automatically detect user's OS for Camoufox
+const detectOS = (): string => {
+  const ua = window.navigator.userAgent.toLowerCase();
+  if (ua.includes("mac")) return "macos";
+  if (ua.includes("linux")) return "linux";
+  return "windows"; 
+};
+
 interface AddAccountWizardProps {
   isOpen: boolean;
   onClose: () => void;
-  onAdd: (username: string, sessionJson: string, platform: string, country: string) => Promise<boolean>;
+  // Added osProfile to the onAdd signature
+  onAdd: (username: string, sessionJson: string, platform: string, country: string, osProfile: string) => Promise<boolean>;
 }
 
 interface Platform {
@@ -35,6 +44,7 @@ export const AddAccountWizard: React.FC<AddAccountWizardProps> = ({ isOpen, onCl
   const [qrCodeGenerated, setQrCodeGenerated] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [qrExpired, setQrExpired] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const platforms: Platform[] = [
     { 
@@ -104,8 +114,6 @@ export const AddAccountWizard: React.FC<AddAccountWizardProps> = ({ isOpen, onCl
     }
   };
 
-  const [isSubmitting, setIsSubmitting] = useState(false); // Add this state
-
   const handleSubmit = async () => {
     if (!username.trim()) {
       setError('Username is required');
@@ -121,7 +129,8 @@ export const AddAccountWizard: React.FC<AddAccountWizardProps> = ({ isOpen, onCl
     }
     
     setIsSubmitting(true);
-    const success = await onAdd(username, sessionJson, selectedPlatform, country);
+    const osProfile = detectOS(); // Capture the OS fingerprint
+    const success = await onAdd(username, sessionJson, selectedPlatform, country, osProfile);
     setIsSubmitting(false);
     
     if (success) {
@@ -175,7 +184,7 @@ export const AddAccountWizard: React.FC<AddAccountWizardProps> = ({ isOpen, onCl
 
   return (
     <div className="fixed inset-0 bg-white z-50 overflow-y-auto">
-      {/* Back button - goes one step back */}
+      {/* Back button */}
       <button
         onClick={handleBack}
         className={`fixed top-6 left-6 p-2 hover:bg-gray-100 rounded-lg transition-colors z-10 flex items-center gap-2 ${
@@ -398,7 +407,7 @@ export const AddAccountWizard: React.FC<AddAccountWizardProps> = ({ isOpen, onCl
                   </button>
                 </div>
 
-                {/* Session Input - shown BEFORE extension prompt */}
+                {/* Session Input */}
                 {method === 'session' && (
                   <motion.div
                     initial={{ opacity: 0, y: 10 }}
@@ -425,7 +434,6 @@ export const AddAccountWizard: React.FC<AddAccountWizardProps> = ({ isOpen, onCl
                       </div>
                     </div>
 
-                    {/* Extension prompt - shown AFTER session input */}
                     <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
                       <div className="flex items-start gap-4">
                         <div className="p-2 bg-gray-200 rounded-lg">
@@ -570,18 +578,10 @@ export const AddAccountWizard: React.FC<AddAccountWizardProps> = ({ isOpen, onCl
         {/* Footer */}
         <div className="mt-12 pt-6 border-t border-gray-100 flex items-center justify-between">
           <div className="flex-1">
-            {step === 1 && (
-              <p className="text-sm text-gray-400">Select a platform to continue</p>
-            )}
-            {step === 2 && (
-              <p className="text-sm text-gray-400">Choose the country for this account</p>
-            )}
-            {step === 3 && (
-              <p className="text-sm text-gray-400">Choose your login method</p>
-            )}
-            {step === 4 && (
-              <p className="text-sm text-gray-400">Enter your account username</p>
-            )}
+            {step === 1 && <p className="text-sm text-gray-400">Select a platform to continue</p>}
+            {step === 2 && <p className="text-sm text-gray-400">Choose the country for this account</p>}
+            {step === 3 && <p className="text-sm text-gray-400">Choose your login method</p>}
+            {step === 4 && <p className="text-sm text-gray-400">Enter your account username</p>}
           </div>
 
           <div className="flex items-center gap-4">
