@@ -478,6 +478,7 @@ const Dashboard: React.FC = () => {
         </div>
       </div>
 
+
       <AddAccountWizard isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} onAdd={handleAddAccount} />
       <EditPostModal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} onSave={handleSaveEdit} post={editingPost} />
     </div>
