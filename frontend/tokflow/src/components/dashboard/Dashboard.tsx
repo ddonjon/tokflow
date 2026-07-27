@@ -5,6 +5,9 @@ import { AddAccountWizard, EditPostModal } from './modals';
 import { Account, ScheduledPost } from './types';
 import { motion, AnimatePresence } from 'framer-motion';
 
+// Pull the API URL from Netlify environment variables, fallback to localhost for development
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
 interface Toast {
   id: string;
   message: string;
@@ -44,7 +47,7 @@ const Dashboard: React.FC = () => {
     const fetchData = async () => {
       try {
         // Fetch Accounts
-        const accRes = await fetch('http://localhost:8000/api/v1/accounts');
+        const accRes = await fetch(`${API_URL}/api/v1/accounts`);
         const accJson = await accRes.json();
         
         if (accJson.status === 'success' && accJson.data) {
@@ -60,7 +63,7 @@ const Dashboard: React.FC = () => {
         }
 
         // Fetch Posts
-        const postRes = await fetch('http://localhost:8000/api/v1/posts');
+        const postRes = await fetch(`${API_URL}/api/v1/posts`);
         const postJson = await postRes.json();
 
         if (postJson.status === 'success' && postJson.data) {
@@ -77,7 +80,7 @@ const Dashboard: React.FC = () => {
           setHistoryPosts(loadedPosts.filter(p => p.status !== 'scheduled'));
         }
       } catch (error) {
-        showToast('Failed to fetch data from Vault.', 'error');
+        showToast('Failed to fetch data from server.', 'error');
       }
     };
     fetchData();
@@ -87,7 +90,7 @@ const Dashboard: React.FC = () => {
     if (!accountToDelete) return;
     
     try {
-      const response = await fetch(`http://localhost:8000/api/v1/accounts/${accountToDelete.id}`, {
+      const response = await fetch(`${API_URL}/api/v1/accounts/${accountToDelete.id}`, {
         method: 'DELETE'
       });
       
@@ -134,15 +137,16 @@ const Dashboard: React.FC = () => {
     return sortOrder === 'newest' ? b.scheduledFor.getTime() - a.scheduledFor.getTime() : a.scheduledFor.getTime() - b.scheduledFor.getTime();
   });
 
-  const handleAddAccount = async (username: string, sessionJson: string, platform: string, country: string): Promise<boolean> => {
+  const handleAddAccount = async (username: string, sessionJson: string, platform: string, country: string, osProfile: string = "windows"): Promise<boolean> => {
     const formData = new FormData();
     formData.append('username', username);
     formData.append('session_cookie', sessionJson);
     formData.append('platform', platform);
     formData.append('country', country);
+    formData.append('os_profile', osProfile);
 
     try {
-      const response = await fetch('http://localhost:8000/api/v1/accounts/add', {
+      const response = await fetch(`${API_URL}/api/v1/accounts/add`, {
         method: 'POST',
         body: formData
       });
@@ -177,51 +181,98 @@ const Dashboard: React.FC = () => {
     if (!selectedAccount.sessionCookie) { showToast('No session cookie found', 'error'); return; }
 
     setIsScheduling(true);
-    showToast(`Initializing upload for ${selectedAccount.username}...`, 'info');
-
-    const formData = new FormData();
-    formData.append('video', selectedFile);
-    formData.append('caption', caption);
-    formData.append('session_cookie', selectedAccount.sessionCookie);
-    formData.append('account_id', selectedAccount.id); 
-    formData.append('video_name', selectedFile.name); 
-    if (scheduledDate) formData.append('scheduled_for', scheduledDate);
 
     try {
-      const response = await fetch('http://localhost:8000/api/v1/upload', { method: 'POST', body: formData });
-      const data = await response.json();
-
-      if (response.ok && (data.status === 'success' || data.status === 'failed')) {
-        const newPost: ScheduledPost = {
-          id: data.post_id || Date.now().toString(),
-          accountId: selectedAccount.id,
-          videoName: selectedFile.name,
-          caption,
-          scheduledFor: scheduledDate ? new Date(scheduledDate) : new Date(),
-          status: data.status === 'failed' ? 'failed' : (scheduledDate ? 'scheduled' : 'posted'),
-        };
+      if (scheduledDate) {
+        // --- PATH A: SCHEDULED POST (Uploads to Vault First) ---
+        showToast('Uploading video to secure vault...', 'info');
         
-        if (data.status === 'failed') {
-          // Log as failed in History
-          setHistoryPosts(prev => [newPost, ...prev]);
-          showToast(`Upload failed. Check history.`, 'error');
-          
-          // Tripwire: If it was a Timeout, the session is likely dead
-          if (data.message && data.message.includes('Timeout')) {
-            showToast(`Session Expired: Please reconnect ${selectedAccount.username}`, 'error');
-            // We could auto-flag the UI here, but for now, the toast warns the user
-          }
-        } else {
-          // Success
-          scheduledDate ? setScheduledPosts(prev => [...prev, newPost]) : setHistoryPosts(prev => [newPost, ...prev]);
-          showToast(`${scheduledDate ? 'Scheduled' : 'Posted'} successfully!`, 'success');
+        const vaultData = new FormData();
+        vaultData.append("video", selectedFile);
+        
+        const vaultRes = await fetch(`${API_URL}/api/v1/vault/upload`, {
+          method: "POST",
+          body: vaultData
+        });
+        const vaultResult = await vaultRes.json();
+        
+        if (vaultResult.status !== "success") {
+          showToast('Vault upload failed.', 'error');
+          setIsScheduling(false);
+          return;
         }
 
-        setSelectedFile(undefined);
-        setCaption('');
-        setScheduledDate('');
+        showToast('Scheduling post...', 'info');
+        
+        const postData = new FormData();
+        postData.append("video_url", vaultResult.url); // Sending the Vault URL
+        postData.append("caption", caption);
+        postData.append("session_cookie", selectedAccount.sessionCookie);
+        postData.append("account_id", selectedAccount.id);
+        postData.append("video_name", selectedFile.name);
+        postData.append("scheduled_for", new Date(scheduledDate).toISOString());
+        
+        const response = await fetch(`${API_URL}/api/v1/upload`, { method: "POST", body: postData });
+        const data = await response.json();
+
+        if (response.ok && data.status === 'success') {
+          const newPost: ScheduledPost = {
+            id: data.post_id || Date.now().toString(),
+            accountId: selectedAccount.id,
+            videoName: selectedFile.name,
+            caption,
+            scheduledFor: new Date(scheduledDate),
+            status: 'scheduled',
+          };
+          setScheduledPosts(prev => [...prev, newPost]);
+          showToast('Post scheduled successfully!', 'success');
+          
+          setSelectedFile(undefined);
+          setCaption('');
+          setScheduledDate('');
+        } else {
+          showToast(`Scheduling failed: ${data.detail || data.message || 'Error'}`, 'error');
+        }
+
       } else {
-        showToast(`Upload failed: ${data.detail || data.message || 'Error'}`, 'error');
+        // --- PATH B: INSTANT POST (Direct Execution) ---
+        showToast(`Initializing upload for ${selectedAccount.username}...`, 'info');
+        
+        const postData = new FormData();
+        postData.append("video", selectedFile); // Sending raw file directly
+        postData.append("caption", caption);
+        postData.append("session_cookie", selectedAccount.sessionCookie);
+        postData.append("account_id", selectedAccount.id);
+        postData.append("video_name", selectedFile.name);
+        
+        const response = await fetch(`${API_URL}/api/v1/upload`, { method: "POST", body: postData });
+        const data = await response.json();
+
+        if (response.ok && (data.status === 'success' || data.status === 'failed')) {
+          const newPost: ScheduledPost = {
+            id: data.post_id || Date.now().toString(),
+            accountId: selectedAccount.id,
+            videoName: selectedFile.name,
+            caption,
+            scheduledFor: new Date(),
+            status: data.status === 'failed' ? 'failed' : 'posted',
+          };
+          
+          setHistoryPosts(prev => [newPost, ...prev]);
+          
+          if (data.status === 'failed') {
+            showToast('Upload failed. Check history.', 'error');
+            if (data.message && data.message.includes('Timeout')) {
+              showToast(`Session Expired: Please reconnect ${selectedAccount.username}`, 'error');
+            }
+          } else {
+            showToast('Posted successfully!', 'success');
+            setSelectedFile(undefined);
+            setCaption('');
+          }
+        } else {
+          showToast(`Upload failed: ${data.detail || data.message || 'Error'}`, 'error');
+        }
       }
     } catch (error) {
       showToast('Network error during upload.', 'error');
@@ -229,7 +280,6 @@ const Dashboard: React.FC = () => {
       setIsScheduling(false);
     }
   };
-  
 
   const handleEditPost = (post: ScheduledPost) => {
     setEditingPost(post);
@@ -245,7 +295,7 @@ const Dashboard: React.FC = () => {
     formData.append('scheduled_for', newDate.toISOString());
 
     try {
-      const response = await fetch(`http://localhost:8000/api/v1/posts/${editingPost.id}`, { 
+      const response = await fetch(`${API_URL}/api/v1/posts/${editingPost.id}`, { 
         method: 'PUT',
         body: formData 
       });
@@ -263,7 +313,7 @@ const Dashboard: React.FC = () => {
 
   const handleCancelPost = async (postId: string) => {
     try {
-      const response = await fetch(`http://localhost:8000/api/v1/posts/${postId}`, { method: 'DELETE' });
+      const response = await fetch(`${API_URL}/api/v1/posts/${postId}`, { method: 'DELETE' });
       if (response.ok) {
         setScheduledPosts(prev => prev.filter(p => p.id !== postId));
         showToast('Post cancelled permanently.', 'info');
