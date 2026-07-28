@@ -184,8 +184,9 @@ const Dashboard: React.FC = () => {
 
     try {
       if (scheduledDate) {
-        // --- PATH A: SCHEDULED POST (Uploads to Vault First) ---
-        showToast('Uploading video to secure vault...', 'info');
+        // --- PATH A: SCHEDULED POST ---
+        // Clean, user-facing notification masking the R2 upload
+        showToast('Processing your scheduled post...', 'info');
         
         const vaultData = new FormData();
         vaultData.append("video", selectedFile);
@@ -197,15 +198,13 @@ const Dashboard: React.FC = () => {
         const vaultResult = await vaultRes.json();
         
         if (vaultResult.status !== "success") {
-          showToast('Vault upload failed.', 'error');
+          showToast('Failed to process video. Please try again.', 'error');
           setIsScheduling(false);
           return;
         }
 
-        showToast('Scheduling post...', 'info');
-        
         const postData = new FormData();
-        postData.append("video_url", vaultResult.url); // Sending the Vault URL
+        postData.append("video_url", vaultResult.url);
         postData.append("caption", caption);
         postData.append("session_cookie", selectedAccount.sessionCookie);
         postData.append("account_id", selectedAccount.id);
@@ -231,15 +230,15 @@ const Dashboard: React.FC = () => {
           setCaption('');
           setScheduledDate('');
         } else {
-          showToast(`Scheduling failed: ${data.detail || data.message || 'Error'}`, 'error');
+          showToast(`Scheduling failed. Please try again.`, 'error');
         }
 
       } else {
-        // --- PATH B: INSTANT POST (Direct Execution) ---
-        showToast(`Initializing upload for ${selectedAccount.username}...`, 'info');
+        // --- PATH B: INSTANT POST ---
+        showToast(`Posting video for ${selectedAccount.username}...`, 'info');
         
         const postData = new FormData();
-        postData.append("video", selectedFile); // Sending raw file directly
+        postData.append("video", selectedFile); 
         postData.append("caption", caption);
         postData.append("session_cookie", selectedAccount.sessionCookie);
         postData.append("account_id", selectedAccount.id);
@@ -261,9 +260,10 @@ const Dashboard: React.FC = () => {
           setHistoryPosts(prev => [newPost, ...prev]);
           
           if (data.status === 'failed') {
-            showToast('Upload failed. Check history.', 'error');
             if (data.message && data.message.includes('Timeout')) {
               showToast(`Session Expired: Please reconnect ${selectedAccount.username}`, 'error');
+            } else {
+              showToast('Post failed. Check history.', 'error');
             }
           } else {
             showToast('Posted successfully!', 'success');
@@ -271,7 +271,7 @@ const Dashboard: React.FC = () => {
             setCaption('');
           }
         } else {
-          showToast(`Upload failed: ${data.detail || data.message || 'Error'}`, 'error');
+          showToast(`Upload failed. Please try again.`, 'error');
         }
       }
     } catch (error) {
